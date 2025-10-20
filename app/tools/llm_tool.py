@@ -18,13 +18,14 @@ async def ask_llm(prompt: str) -> str:
     if provider == "gemini":
         if not settings.google_api_key:
             return f"[mocked llm] You asked: '{prompt}'. No GOOGLE_API_KEY configured."
-        # REST call to Generative Language API (Gemini 1.5 Flash for responsiveness)
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        params = {"key": settings.google_api_key}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        try:
+        model = "gemini-1.5-flash-latest"
+        payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+        headers = {"x-goog-api-key": settings.google_api_key, "Content-Type": "application/json"}
+
+        async def call_endpoint(base: str) -> str:
+            url = f"{base}/{model}:generateContent"
             async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.post(url, params=params, json=payload)
+                r = await client.post(url, headers=headers, json=payload)
                 r.raise_for_status()
                 data = r.json()
             candidates = data.get("candidates") or []
@@ -33,7 +34,17 @@ async def ask_llm(prompt: str) -> str:
             parts = candidates[0].get("content", {}).get("parts", [])
             text = "".join(p.get("text", "") for p in parts)
             return text
+
+        try:
+            # Try v1 first
+            return await call_endpoint("https://generativelanguage.googleapis.com/v1")
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                # Fallback to v1beta
+                try:
+                    return await call_endpoint("https://generativelanguage.googleapis.com/v1beta")
+                except httpx.HTTPStatusError as e2:
+                    return f"LLM request failed: {e2.response.status_code} {e2.response.text}"
             return f"LLM request failed: {e.response.status_code} {e.response.text}"
         except Exception as e:  # noqa: BLE001
             return f"LLM request failed: {e}"
