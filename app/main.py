@@ -1,68 +1,115 @@
-from __future__ import annotations
+from fastapi import FastAPI
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
+import re
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-from app.schemas import QueryRequest, QueryResponse
-from app.tools.math_tool import evaluate_math_expression, is_math_query
-from app.tools.weather_tool import fetch_weather, is_weather_query
-from app.tools.llm_tool import ask_llm, ask_llm_stream
-
-
-app = FastAPI(title="AI Agent Router", version="0.1.0")
+from app.tools import weather_tool, math_tool
 
 
-def select_tool(query: str) -> str:
-    if is_weather_query(query):
+# Load environment variables
+load_dotenv()
+
+# FastAPI app
+app = FastAPI(
+    title="AI Agent Backend (Gemini Edition)",
+    description="Routes natural language queries to the right tool (weather, math, or LLM).",
+    version="1.0.0",
+)
+
+
+class QueryRequest(BaseModel):
+    query: str
+
+
+def pick_tool(query: str) -> str:
+    """Very simple router to pick which tool to use based on the query text."""
+    q = query.lower().strip()
+
+    # Weather first: any mention of weather-related terms
+    if "weather" in q or "temperature" in q or "forecast" in q:
         return "weather"
-    if is_math_query(query):
+
+    # Math detection: looks for something like digits/operators
+    math_pattern = re.compile(r"^\s*[\d\s()+\-*/%.]+\s*$")
+    if math_pattern.match(q):
         return "math"
+
+    # Also treat questions of the form 'what is 2+2' as math if they contain digits/operators
+    if "what is" in q or "calculate" in q:
+        if re.search(r"[0-9]", q) and re.search(r"[+\-*/%()]", q):
+            return "math"
+
     return "llm"
 
 
-@app.post("/query", response_model=QueryResponse)
-async def query_endpoint(payload: QueryRequest):
-    tool = select_tool(payload.query)
+def extract_city(query: str) -> str | None:
+    """Heuristic city extractor supporting 'in/at/on CITY' and 'City, Region'."""
+    # 1) Look for preposition + location (allows commas, hyphens, spaces)
+    preposition_pat = re.compile(r"\b(in|at|on)\s+([A-Za-z0-9\s\-\.,]+)", re.IGNORECASE)
+    last_match = None
+    for m in preposition_pat.finditer(query):
+        last_match = m
+    if last_match:
+        candidate = last_match.group(2)
+        # Strip trailing question marks or periods
+        candidate = re.sub(r"[\?\.!]+$", "", candidate).strip()
+        # Remove common trailing words
+        candidate = re.sub(r"\b(today|now|currently|right now)\b\.?$", "", candidate, flags=re.IGNORECASE).strip(
+        )
+        if candidate:
+            return candidate
+
+    # 2) Look for a 'City, Region' pattern anywhere
+    comma_loc = re.search(r"([A-Za-z][A-Za-z\s\-]+,\s*[A-Za-z\s\-]+)", query)
+    if comma_loc:
+        return comma_loc.group(1).strip()
+
+    # 3) Fallback: simple trailing 'in CITY' with letters only
+    match = re.search(r"in\s+([A-Za-z\s\-]+)\??$", query, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+# Initialize Gemini LLM (works with GOOGLE_API_KEY)
+llm = ChatGoogleGenerativeAI(
+    model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
+    temperature=0,
+)
+
+
+@app.post("/query")
+async def process_query(request: QueryRequest):
+    query = request.query
+
+    tool = pick_tool(query)
+
+    if tool == "math":
+        # Try to pull an expression like after 'what is' or whole query
+        expr = query
+        m = re.search(r"what is\s+(.+)", query, flags=re.IGNORECASE)
+        if m:
+            expr = m.group(1).strip()
+        result = math_tool(expr)
+        return {"query": query, "tool_used": "math", "result": result}
+
     if tool == "weather":
-        result = await fetch_weather(payload.query)
-    elif tool == "math":
-        try:
-            result = evaluate_math_expression(payload.query)
-        except ValueError as e:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "query": payload.query,
-                    "tool_used": tool,
-                    "result": str(e),
-                },
-            )
-    else:
-        result = await ask_llm(payload.query)
+        city = extract_city(query) or "San Francisco"
+        result = weather_tool(city)
+        return {"query": query, "tool_used": "weather", "result": result}
 
-    return QueryResponse(query=payload.query, tool_used=tool, result=result)
-
-
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
+    # LLM fallback using Gemini
     try:
-        while True:
-            data = await ws.receive_text()
-            tool = select_tool(data)
-            await ws.send_json({"query": data, "tool_used": tool, "result": ""})
-            if tool == "weather":
-                text = await fetch_weather(data)
-                await ws.send_text(text)
-            elif tool == "math":
-                try:
-                    text = evaluate_math_expression(data)
-                except Exception as e:  # noqa: BLE001
-                    text = str(e)
-                await ws.send_text(text)
-            else:
-                async for chunk in ask_llm_stream(data):
-                    await ws.send_text(chunk)
-            await ws.send_text("[END]")
-    except WebSocketDisconnect:
-        return
+        ai_msg = llm.invoke(query)
+        content = getattr(ai_msg, "content", None) or getattr(ai_msg, "text", None) or str(ai_msg)
+    except Exception as e:
+        content = f"Error calling LLM: {e}"
+    return {"query": query, "tool_used": "llm", "result": content}
+
+
+@app.get("/")
+def health():
+    return {"status": "ok"}

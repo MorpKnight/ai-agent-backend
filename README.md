@@ -1,142 +1,100 @@
-# AI Agent Backend (Minimal Router)
+# AI Agent Backend (Gemini Edition)
 
-A tiny FastAPI backend that routes a natural-language query to one of three tools:
+Small FastAPI app that routes a natural language query to one of three tools and returns a structured response:
+- weather – uses OpenWeatherMap API
+- math – evaluates a basic math expression
+- llm – answers using Google Gemini
 
-- weather tool (OpenWeatherMap)
-- math tool (safe arithmetic evaluator)
-- LLM tool (OpenAI; mocked if no key)
+This project intentionally keeps the “agent” logic very simple with a tiny router. You can swap in LangChain or LangGraph later if desired.
 
-It returns a structured JSON response with the tool used and the result.
+## Requirements
 
-## Setup
+- Python 3.10+
+- API keys in a `.env` file:
 
-1) Create and activate a virtual environment (optional but recommended).
+```
+GOOGLE_API_KEY=your_google_api_key
+OPENWEATHERMAP_API_KEY=your_openweathermap_api_key
+# optional override (defaults to gemini-1.5-pro-latest)
+GEMINI_MODEL=gemini-1.5-pro-latest
+```
 
-2) Install dependencies:
+## Install and run (local)
 
-```powershell
+```
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-3) Set environment variables (optional to enable external APIs):
-
-- `OPENWEATHER_API_KEY` for OpenWeatherMap
-- `LLM_PROVIDER` (optional) choose `gemini` (default) or `openai`
-- `GOOGLE_API_KEY` for Gemini (required if LLM_PROVIDER=gemini)
-- `OPENAI_API_KEY` for OpenAI (required if LLM_PROVIDER=openai)
-- `DEFAULT_CITY` (optional, defaults to "San Francisco")
-
-Example in PowerShell (Gemini):
-
-```powershell
-$env:OPENWEATHER_API_KEY = "your_openweather_key"
-$env:LLM_PROVIDER = "gemini"
-$env:GOOGLE_API_KEY = "your_google_api_key"
-```
-
-For OpenAI instead:
-
-```powershell
-$env:LLM_PROVIDER = "openai"
-$env:OPENAI_API_KEY = "your_openai_key"
-```
-
-4) Run the server:
-
-```powershell
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+Open http://localhost:8000/docs for Swagger UI.
 
 ## API
 
-POST `/query`
+POST /query
 
-Request body:
+Body:
 
-```json
+```
+{ "query": "What is 42 * 7?" }
+```
+
+Responses include:
+
+```
 {
-  "query": "What's the weather today in Paris?"
+	"query": "What is 42 * 7?",
+	"tool_used": "math",
+	"result": "294"
 }
 ```
 
-Response shape:
+Examples:
 
-```json
+- Weather
+
+```
 {
-  "query": "What's the weather today in Paris?",
-  "tool_used": "weather",
-  "result": "It's 26°C and sunny in Paris."
+	"query": "What's the weather like today in Paris?"
 }
 ```
 
-If no API keys are set, weather and llm responses are mocked with clearly labeled text.
-
-### WebSocket `/ws`
-
-Send a text message with your query. The server first sends a JSON frame announcing the selected tool, then streams text chunks of the result. A final `[END]` message marks completion.
-
-## Examples
-
-- Math
-
-Request:
-
-```json
-{ "query": "42 * 7" }
 ```
-
-Response:
-
-```json
-{ "query": "42 * 7", "tool_used": "math", "result": "294" }
-```
-
-- Weather (Paris)
-
-Request:
-
-```json
-{ "query": "What's the weather like today in Paris?" }
-```
-
-Response (example):
-
-```json
-{ "query": "What's the weather like today in Paris?", "tool_used": "weather", "result": "It's 26°C and sunny in Paris." }
+{
+	"query": "What's the weather like today in Paris?",
+	"tool_used": "weather",
+	"result": "It's 26°C and sunny in Paris."
+}
 ```
 
 - LLM
 
-Request:
-
-```json
-{ "query": "Who is the president of France?" }
+```
+{
+	"query": "Who is the president of France?"
+}
 ```
 
-Response (example):
-
-```json
-{ "query": "Who is the president of France?", "tool_used": "llm", "result": "The president of France is Emmanuel Macron." }
+```
+{
+	"query": "Who is the president of France?",
+	"tool_used": "llm",
+	"result": "The president of France is Emmanuel Macron."
+}
 ```
 
 ## Docker
 
-Build and run with Docker:
+Build and run:
 
-```powershell
-docker build -t ai-agent-backend .
-# Optionally pass env vars
-docker run -p 8000:8000 -e OPENWEATHER_API_KEY=$env:OPENWEATHER_API_KEY -e OPENAI_API_KEY=$env:OPENAI_API_KEY ai-agent-backend
 ```
-
-## Tests
-
-```powershell
-pytest -q
+docker build -t ai-agent-backend .
+docker run -p 8000:8000 --env-file .env ai-agent-backend
 ```
 
 ## Notes
 
-- The selector is heuristic: weather keywords outrank math; otherwise falls back to LLM.
-- Weather city extraction is naive (looks for "in <City>"). You can extend it with proper NER if desired.
-- LLM and weather tools gracefully degrade to mocked responses if no API keys are set.
+- Math tool uses a very restricted eval and may not support advanced functions. For production, replace with a real parser.
+- Weather tool requires a valid OpenWeatherMap API key.
+- LLM tool requires a valid Google API key for Gemini.
