@@ -1,30 +1,24 @@
-# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Build artifacts
 build/
 dist/
 *.egg-info/
 .eggs/
 
-# Logs and runtime
 *.log
 *.pid
 
-# Virtual environments
 .venv/
 venv/
 ENV/
 env/
 
-# Environment and secrets
 .env
 .env.*
 !.env.example
 
-# Test/coverage
 .pytest_cache/
 .coverage
 .coverage.*
@@ -35,18 +29,14 @@ htmlcov/
 .dmypy.json
 .cache/
 
-# IDE/editor
 .vscode/
 .idea/
 *.code-workspace
 
-# OS files
 .DS_Store
 Thumbs.db
 
-# Node (if present)
 node_modules/
 
-# Docker (optional artifacts)
 *.tar
 docker-compose.override.yml

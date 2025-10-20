@@ -33,9 +33,7 @@ def weather_tool(city: str) -> str:
 
 def math_tool(expression: str) -> str:
     """Evaluate a basic mathematical expression safely."""
-    # Very restricted evaluation using Python's eval with no builtins
     try:
-        # Only allow digits, operators and parentheses
         allowed = set("0123456789+-*/(). %")
         if not set(expression).issubset(allowed):
             return "Error: Unsupported characters in expression."
