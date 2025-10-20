@@ -1,74 +1,68 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from dotenv import load_dotenv
-import os
+from __future__ import annotations
 
-from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 
-from app.tools import weather_tool, math_tool
-
-load_dotenv()
-
-app = FastAPI(
-    title="AI Agent Backend",
-    description="An API that routes natural language commands to the correct tool.",
-    version="1.0.0"
-)
-
-class QueryRequest(BaseModel):
-    query: str
-
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
-tools = [weather_tool, math_tool]
-
-template = """
-Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Use the following format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Begin!
-
-Question: {input}
-Thought:{agent_scratchpad}
-"""
-prompt = PromptTemplate.from_template(template)
-
-agent = create_react_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+from app.schemas import QueryRequest, QueryResponse
+from app.tools.math_tool import evaluate_math_expression, is_math_query
+from app.tools.weather_tool import fetch_weather, is_weather_query
+from app.tools.llm_tool import ask_llm, ask_llm_stream
 
 
-@app.post("/query")
-async def process_query(request: QueryRequest):
-    query = request.query
-    
-    response = agent_executor.invoke({"input": query})
-    
-    tool_used = "llm"
-    if "Action:" in response.get("intermediate_steps", [("", "")])[0][0].log:
-      action_log = response["intermediate_steps"][0][0].log
-      action_tool = action_log.split("Action:")[1].split("\n")[0].strip()
-      if action_tool in [t.name for t in tools]:
-          tool_used = action_tool
-            
-    return {
-        "query": query,
-        "tool_used": tool_used,
-        "result": response['output']
-    }
+app = FastAPI(title="AI Agent Router", version="0.1.0")
 
-@app.get("/")
-def read_root():
-    return {"status": "ok"}
+
+def select_tool(query: str) -> str:
+    if is_weather_query(query):
+        return "weather"
+    if is_math_query(query):
+        return "math"
+    return "llm"
+
+
+@app.post("/query", response_model=QueryResponse)
+async def query_endpoint(payload: QueryRequest):
+    tool = select_tool(payload.query)
+    if tool == "weather":
+        result = await fetch_weather(payload.query)
+    elif tool == "math":
+        try:
+            result = evaluate_math_expression(payload.query)
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "query": payload.query,
+                    "tool_used": tool,
+                    "result": str(e),
+                },
+            )
+    else:
+        result = await ask_llm(payload.query)
+
+    return QueryResponse(query=payload.query, tool_used=tool, result=result)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            data = await ws.receive_text()
+            tool = select_tool(data)
+            await ws.send_json({"query": data, "tool_used": tool, "result": ""})
+            if tool == "weather":
+                text = await fetch_weather(data)
+                await ws.send_text(text)
+            elif tool == "math":
+                try:
+                    text = evaluate_math_expression(data)
+                except Exception as e:  # noqa: BLE001
+                    text = str(e)
+                await ws.send_text(text)
+            else:
+                async for chunk in ask_llm_stream(data):
+                    await ws.send_text(chunk)
+            await ws.send_text("[END]")
+    except WebSocketDisconnect:
+        return

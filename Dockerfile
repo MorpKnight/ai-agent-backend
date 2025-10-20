@@ -1,19 +1,22 @@
-# 1. Use an official Python runtime as a parent image
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
 
-# 2. Set the working directory in the container
-WORKDIR /code
+FROM python:3.11-slim AS base
 
-# 3. Copy the dependencies file and install them
-COPY ./requirements.txt /code/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-# 4. Copy the local code to the container
-COPY ./app /code/app
+WORKDIR /app
 
-# 5. Expose the port the app runs on
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY . .
+
 EXPOSE 8000
 
-# 6. Command to run the application using Uvicorn
-# The host 0.0.0.0 makes the server accessible from outside the container
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
