@@ -21,13 +21,23 @@ pip install -r requirements.txt
 3) Set environment variables (optional to enable external APIs):
 
 - `OPENWEATHER_API_KEY` for OpenWeatherMap
-- `OPENAI_API_KEY` for OpenAI
+- `LLM_PROVIDER` (optional) choose `gemini` (default) or `openai`
+- `GOOGLE_API_KEY` for Gemini (required if LLM_PROVIDER=gemini)
+- `OPENAI_API_KEY` for OpenAI (required if LLM_PROVIDER=openai)
 - `DEFAULT_CITY` (optional, defaults to "San Francisco")
 
-Example in PowerShell:
+Example in PowerShell (Gemini):
 
 ```powershell
 $env:OPENWEATHER_API_KEY = "your_openweather_key"
+$env:LLM_PROVIDER = "gemini"
+$env:GOOGLE_API_KEY = "your_google_api_key"
+```
+
+For OpenAI instead:
+
+```powershell
+$env:LLM_PROVIDER = "openai"
 $env:OPENAI_API_KEY = "your_openai_key"
 ```
 

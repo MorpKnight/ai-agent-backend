@@ -19,6 +19,8 @@ class Settings:
     openweather_api_key: str | None
     default_city: str
     debug: bool
+    llm_provider: str
+    google_api_key: str | None
 
 
 def get_settings() -> Settings:
@@ -27,4 +29,6 @@ def get_settings() -> Settings:
         openweather_api_key=os.getenv("OPENWEATHER_API_KEY"),
         default_city=os.getenv("DEFAULT_CITY", "San Francisco"),
         debug=os.getenv("DEBUG", "false").lower() in {"1", "true", "yes", "on"},
+        llm_provider=os.getenv("LLM_PROVIDER", "gemini").lower(),
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
     )
