@@ -3,6 +3,15 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+try:
+    # Load variables from a local .env file if present
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:
+    # python-dotenv may not be installed; ignore if missing
+    pass
+
 
 @dataclass(frozen=True)
 class Settings:
