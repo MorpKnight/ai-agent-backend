@@ -79,8 +79,11 @@ async def process_query(request: QueryRequest):
     if tool == "math":
         expr = query
         m = re.search(r"what is\s+(.+)", query, flags=re.IGNORECASE)
+        if not m:
+            m = re.search(r"calculate\s+(.+)", query, flags=re.IGNORECASE)
         if m:
             expr = m.group(1).strip()
+        expr = re.sub(r"[\?\.!]+$", "", expr).replace(",", "").strip()
         result = math_tool(expr)
         return {"query": query, "tool_used": "math", "result": result}
 
