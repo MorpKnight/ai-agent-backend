@@ -37,6 +37,13 @@ def pick_tool(query: str) -> str:
         if re.search(r"[0-9]", q) and re.search(r"[+\-*/%()]", q):
             return "math"
 
+        # Also treat common math phrases as math even without explicit operators
+        phrase_markers = [
+            "square root", "sqrt", "cube root", "cubic root", "to the power of", "^", "power of"
+        ]
+        if any(marker in q for marker in phrase_markers) and re.search(r"[0-9]", q):
+            return "math"
+
     return "llm"
 
 

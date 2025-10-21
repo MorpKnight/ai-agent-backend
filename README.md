@@ -15,8 +15,10 @@ This project intentionally keeps the “agent” logic very simple with a tiny r
 ```
 GOOGLE_API_KEY=your_google_api_key
 OPENWEATHERMAP_API_KEY=your_openweathermap_api_key
-# optional override (defaults to gemini-1.5-pro-latest)
-GEMINI_MODEL=gemini-1.5-pro-latest
+# optional override (defaults to gemini-flash-latest in code)
+GEMINI_MODEL=gemini-flash-latest
+# optional: return ASCII degrees in weather responses (avoids Windows PS 5.1 encoding issues)
+WEATHER_ASCII_DEGREES=true
 ```
 
 ## Install and run (local)
@@ -67,7 +69,6 @@ Examples:
 	"result": "It's 26°C and sunny in Paris."
 }
 ```
-
 - LLM
 
 ```
@@ -84,6 +85,21 @@ Examples:
 }
 ```
 
+- Math (natural phrase)
+
+```
+{
+	"query": "Calculate cubic root of 1000?"
+}
+```
+
+```
+{
+	"query": "Calculate cubic root of 1000?",
+	"tool_used": "math",
+	"result": "10.0"
+}
+```
 ## Docker
 
 Build and run:
